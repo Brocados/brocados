@@ -768,6 +768,80 @@
             padding-top: 10px;
         }
 
+        /* BARRA DE COMANDOS TELEGRAM */
+        .telegram-command-bar {
+            position: fixed;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90%;
+            max-width: 500px;
+            background: white;
+            border-radius: 50px;
+            padding: 12px 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            z-index: 999;
+            display: none;
+        }
+        
+        .telegram-command-bar.active {
+            display: block;
+            animation: slideUpCommand 0.3s ease;
+        }
+        
+        @keyframes slideUpCommand {
+            from {
+                opacity: 0;
+                transform: translateX(-50%) translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(-50%) translateY(0);
+            }
+        }
+        
+        .command-input {
+            width: 100%;
+            border: none;
+            outline: none;
+            font-size: 1rem;
+            padding: 5px 0;
+        }
+        
+        .command-suggestions {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border-radius: 15px;
+            margin-top: 5px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            display: none;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1001;
+        }
+        
+        .command-suggestions.active {
+            display: block;
+        }
+        
+        .suggestion-item {
+            padding: 12px 20px;
+            cursor: pointer;
+            border-bottom: 1px solid #f0f0f0;
+            transition: all 0.2s ease;
+        }
+        
+        .suggestion-item:hover {
+            background: #f5f5f5;
+        }
+        
+        .suggestion-item:last-child {
+            border-bottom: none;
+        }
+
         /* RESPONSIVIDADE */
         @media (max-width: 768px) {
             .container {
@@ -869,6 +943,11 @@
                 left: 5px;
                 right: 5px;
                 top: 60px;
+            }
+            
+            .telegram-command-bar {
+                bottom: 80px;
+                width: 95%;
             }
         }
 
@@ -1099,6 +1178,14 @@
         </div>
     </div>
 
+    <!-- Barra de Comandos Telegram -->
+    <div class="telegram-command-bar" id="telegramCommandBar">
+        <input type="text" class="command-input" id="commandInput" placeholder="Digite um comando do Telegram...">
+        <div class="command-suggestions" id="commandSuggestions">
+            <!-- Sugestões serão adicionadas via JavaScript -->
+        </div>
+    </div>
+
     <script>
         // CONFIGURAÇÃO INICIAL - SUBSTITUA COM SEUS DADOS!
         const TELEGRAM_CONFIG = {
@@ -1153,6 +1240,7 @@
         // Carrinho de compras
         let cart = [];
         let lastUpdateId = 0;
+        let telegramWebhookUrl = null;
 
         // ===== FUNÇÕES PRINCIPAIS =====
 
@@ -1203,7 +1291,32 @@
             }, 3000);
         }
 
-        // ===== SISTEMA TELEGRAM =====
+        // ===== SISTEMA TELEGRAM OTIMIZADO =====
+
+        // Configurar Webhook para atualizações instantâneas
+        async function setupTelegramWebhook() {
+            if (!TELEGRAM_CONFIG.botToken || TELEGRAM_CONFIG.botToken === 'SEU_TOKEN_DO_BOT_AQUI') {
+                console.log('Token do Telegram não configurado. Usando polling.');
+                return;
+            }
+
+            try {
+                // Tentar configurar webhook (requer servidor HTTPS)
+                telegramWebhookUrl = `${window.location.origin}/telegram-webhook`;
+                const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_CONFIG.botToken}/setWebhook?url=${telegramWebhookUrl}`);
+                const data = await response.json();
+                
+                if (data.ok) {
+                    console.log('Webhook configurado com sucesso!');
+                } else {
+                    console.log('Webhook não suportado. Usando polling otimizado.');
+                    telegramWebhookUrl = null;
+                }
+            } catch (error) {
+                console.log('Erro ao configurar webhook. Usando polling otimizado.');
+                telegramWebhookUrl = null;
+            }
+        }
 
         // Enviar mensagem para o Telegram
         async function sendTelegramMessage(chatId, message) {
@@ -1229,14 +1342,14 @@
             }
         }
 
-        // Verificar mensagens do Telegram
+        // Verificar mensagens do Telegram (Polling Otimizado)
         async function checkTelegramMessages() {
             if (!TELEGRAM_CONFIG.botToken || TELEGRAM_CONFIG.botToken === 'SEU_TOKEN_DO_BOT_AQUI') {
                 return;
             }
 
             try {
-                const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_CONFIG.botToken}/getUpdates?offset=${lastUpdateId + 1}`);
+                const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_CONFIG.botToken}/getUpdates?offset=${lastUpdateId + 1}&timeout=10`);
                 const data = await response.json();
                 
                 if (data.ok && data.result.length > 0) {
@@ -1342,6 +1455,105 @@
 
                 default:
                     return '❌ Comando não reconhecido. Use /start para ver os comandos disponíveis.';
+            }
+        }
+
+        // ===== BARRA DE COMANDOS TELEGRAM =====
+
+        function setupCommandBar() {
+            const commandBar = document.getElementById('telegramCommandBar');
+            const commandInput = document.getElementById('commandInput');
+            const suggestions = document.getElementById('commandSuggestions');
+            
+            // Comandos disponíveis
+            const commands = [
+                { command: '/cardapio', description: 'Ver cardápio completo' },
+                { command: '/indisponivel ID', description: 'Tornar item indisponível' },
+                { command: '/disponivel ID', description: 'Tornar item disponível' },
+                { command: '/editar ID PRECO', description: 'Editar preço do item' },
+                { command: '/whatsapp NUMERO', description: 'Alterar WhatsApp' },
+                { command: '/taxa VALOR', description: 'Alterar taxa de entrega' },
+                { command: '/nome NOVO_NOME', description: 'Alterar nome do restaurante' },
+                { command: '/novo CATEGORIA "NOME" "DESCRICAO" PRECO', description: 'Adicionar item' },
+                { command: '/remover ID', description: 'Remover item' }
+            ];
+            
+            // Mostrar/ocultar barra de comandos
+            document.addEventListener('keydown', function(e) {
+                if (e.ctrlKey && e.key === '/') {
+                    e.preventDefault();
+                    commandBar.classList.toggle('active');
+                    if (commandBar.classList.contains('active')) {
+                        commandInput.focus();
+                    }
+                }
+                
+                if (e.key === 'Escape') {
+                    commandBar.classList.remove('active');
+                    suggestions.classList.remove('active');
+                }
+            });
+            
+            // Sugestões de comandos
+            commandInput.addEventListener('input', function() {
+                const value = this.value.toLowerCase();
+                suggestions.innerHTML = '';
+                
+                if (value) {
+                    const filteredCommands = commands.filter(cmd => 
+                        cmd.command.toLowerCase().includes(value) || 
+                        cmd.description.toLowerCase().includes(value)
+                    );
+                    
+                    if (filteredCommands.length > 0) {
+                        filteredCommands.forEach(cmd => {
+                            const suggestion = document.createElement('div');
+                            suggestion.className = 'suggestion-item';
+                            suggestion.innerHTML = `
+                                <strong>${cmd.command}</strong><br>
+                                <small>${cmd.description}</small>
+                            `;
+                            suggestion.addEventListener('click', function() {
+                                commandInput.value = cmd.command;
+                                suggestions.classList.remove('active');
+                                executeTelegramCommand(cmd.command);
+                            });
+                            suggestions.appendChild(suggestion);
+                        });
+                        suggestions.classList.add('active');
+                    } else {
+                        suggestions.classList.remove('active');
+                    }
+                } else {
+                    suggestions.classList.remove('active');
+                }
+            });
+            
+            // Executar comando ao pressionar Enter
+            commandInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    executeTelegramCommand(this.value);
+                }
+            });
+        }
+        
+        // Executar comando do Telegram
+        async function executeTelegramCommand(command) {
+            if (!command.trim()) return;
+            
+            const result = processTelegramCommand(command, TELEGRAM_CONFIG.chatId);
+            if (result) {
+                // Enviar comando para o Telegram
+                const response = await sendTelegramMessage(TELEGRAM_CONFIG.chatId, command);
+                if (response.ok) {
+                    showNotification('Comando enviado para o Telegram!', 'success');
+                } else {
+                    showNotification('Erro ao enviar comando.', 'error');
+                }
+                
+                // Fechar barra de comandos
+                document.getElementById('telegramCommandBar').classList.remove('active');
+                document.getElementById('commandInput').value = '';
             }
         }
 
@@ -1768,8 +1980,12 @@
             renderAllMenus();
             renderCart();
             
-            // Verificar mensagens do Telegram a cada 3 segundos
-            setInterval(checkTelegramMessages, 3000);
+            // Configurar sistema Telegram
+            setupTelegramWebhook();
+            setupCommandBar();
+            
+            // Verificar mensagens do Telegram a cada 2 segundos (otimizado)
+            setInterval(checkTelegramMessages, 2000);
             
             // Botão admin
             document.getElementById('adminToggle').addEventListener('click', function() {
